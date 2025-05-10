@@ -1,6 +1,6 @@
 <?php
 /**
- * Plugin Name: WP Gatsby - Build Control Fork
+ * Plugin Name: WP Gatsby - Fork
  * Description: Optimize your WordPress site to be a source for Gatsby sites. Enhanced with build control features.
  * Version: 2.3.4
  * Author: GatsbyJS, Jason Bahl, Tyler Barnes, Fork by Maharab Hossain

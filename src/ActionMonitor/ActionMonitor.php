@@ -725,72 +725,83 @@ class ActionMonitor {
 	 * Triggers the dispatch to the remote endpoint(s)
 	 */
 	public function trigger_dispatch() {
-		$build_webhook_field   = Settings::prefix_get_option( 'builds_api_webhook', 'wpgatsby_settings', false );
-		$preview_webhook_field = Settings::prefix_get_option( 'preview_api_webhook', 'wpgatsby_settings', false );
+    $build_webhook_field   = Settings::prefix_get_option( 'builds_api_webhook', 'wpgatsby_settings', false );
+    $preview_webhook_field = Settings::prefix_get_option( 'preview_api_webhook', 'wpgatsby_settings', false );
+    $builds_webhook_active = Settings::prefix_get_option( 'builds_webhook_active', 'wpgatsby_settings', 'on' );
+    $trigger_build_now     = Settings::prefix_get_option( 'trigger_build_now', 'wpgatsby_settings', false );
 
-		$should_call_build_webhooks =
-			$build_webhook_field &&
-			$this->should_dispatch;
+    // If "Trigger Build Now" is checked, we'll force a build regardless of the normal dispatch conditions
+    $force_build = $trigger_build_now === 'on';
 
-		$we_should_call_preview_webhooks =
-			$preview_webhook_field &&
-			$this->should_dispatch;
+    // Reset the "Trigger Build Now" option after we've read it
+    if ($force_build) {
+        $options = get_option('wpgatsby_settings', []);
+        $options['trigger_build_now'] = 'off';
+        update_option('wpgatsby_settings', $options);
+    }
 
-		if ( $should_call_build_webhooks ) {
-			$webhooks = explode( ',', $build_webhook_field );
+    $should_call_build_webhooks =
+        $build_webhook_field &&
+        ($this->should_dispatch || $force_build) &&
+        ($builds_webhook_active === 'on' || $force_build); // Call if builds are enabled or forced
 
-			$truthy_webhooks = array_filter( $webhooks );
-			$unique_webhooks = array_unique( $truthy_webhooks );
+    $we_should_call_preview_webhooks =
+        $preview_webhook_field &&
+        $this->should_dispatch;
 
-			foreach ( $unique_webhooks as $webhook ) {
-				$args = apply_filters( 'gatsby_trigger_dispatch_args', [], $webhook );
+    if ( $should_call_build_webhooks ) {
+        $webhooks = explode( ',', $build_webhook_field );
 
-				wp_safe_remote_post( $webhook, $args );
-			}
-		}
+        $truthy_webhooks = array_filter( $webhooks );
+        $unique_webhooks = array_unique( $truthy_webhooks );
 
-		if ( $we_should_call_preview_webhooks ) {
-			$webhooks = explode( ',', $preview_webhook_field );
+        foreach ( $unique_webhooks as $webhook ) {
+            $args = apply_filters( 'gatsby_trigger_dispatch_args', [], $webhook );
 
-			$truthy_webhooks = array_filter( $webhooks );
-			$unique_webhooks = array_unique( $truthy_webhooks );
+            wp_safe_remote_post( $webhook, $args );
+        }
+    }
 
-			foreach ( $unique_webhooks as $webhook ) {
-				$token = \WPGatsby\GraphQL\Auth::get_token();
+    if ( $we_should_call_preview_webhooks ) {
+        $webhooks = explode( ',', $preview_webhook_field );
 
-				// For preview webhooks we send the token
-				// because this is a build but
-				// we want it to source any pending previews
-				// in case someone pressed preview right after
-				// we got to this point from someone else pressing
-				// publish/update.
-				$graphql_endpoint = apply_filters( 'graphql_endpoint', 'graphql' );
-				$graphql_url = get_site_url() . '/' . ltrim( $graphql_endpoint, '/' );
-				
-				$post_body = apply_filters(
-					'gatsby_trigger_preview_build_dispatch_post_body',
-					[
-						'token' => $token,
-						'userDatabaseId' => get_current_user_id(),
-						'remoteUrl' => $graphql_url
-					]
-				);
+        $truthy_webhooks = array_filter( $webhooks );
+        $unique_webhooks = array_unique( $truthy_webhooks );
 
-				$args = apply_filters(
-					'gatsby_trigger_preview_build_dispatch_args',
-					[
-						'body'        => wp_json_encode( $post_body ),
-						'headers'     => [
-							'Content-Type' => 'application/json; charset=utf-8',
-						],
-						'method'      => 'POST',
-						'data_format' => 'body',
-					],
-					$webhook 
-				);
+        foreach ( $unique_webhooks as $webhook ) {
+            $token = \WPGatsby\GraphQL\Auth::get_token();
 
-				wp_safe_remote_post( $webhook, $args );
-			}
-		}
-	}
+            // For preview webhooks we send the token
+            // because this is a build but
+            // we want it to source any pending previews
+            // in case someone pressed preview right after
+            $graphql_endpoint = apply_filters( 'graphql_endpoint', 'graphql' );
+            $graphql_url = get_site_url() . '/' . ltrim( $graphql_endpoint, '/' );
+            
+            $post_body = apply_filters(
+                'gatsby_trigger_preview_build_dispatch_post_body',
+                [
+                    'token' => $token,
+                    'userDatabaseId' => get_current_user_id(),
+                    'remoteUrl' => $graphql_url
+                ]
+            );
+
+            $args = apply_filters(
+                'gatsby_trigger_preview_build_dispatch_args',
+                [
+                    'body'        => wp_json_encode( $post_body ),
+                    'headers'     => [
+                        'Content-Type' => 'application/json; charset=utf-8',
+                    ],
+                    'method'      => 'POST',
+                    'data_format' => 'body',
+                ],
+                $webhook 
+            );
+
+            wp_safe_remote_post( $webhook, $args );
+        }
+    }
+}
 }
